@@ -145,7 +145,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--outputs-file", type=Path, required=True)
     parser.add_argument(
         "--backend-repository",
-        default="tiagomiele/oficina-backend-fiap-fase3",
+        default="tiagomiele/fiap-tech-challenge-fase3-oficina-backend",
     )
     parser.add_argument(
         "--environment",

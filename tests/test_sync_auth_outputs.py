@@ -39,7 +39,7 @@ class SyncOutputsTest(unittest.TestCase):
         sync_auth_outputs.sync_outputs(
             client,
             outputs,
-            "tiagomiele/oficina-backend-fiap-fase3",
+            "tiagomiele/fiap-tech-challenge-fase3-oficina-backend",
             "homolog",
         )
 
@@ -47,19 +47,19 @@ class SyncOutputsTest(unittest.TestCase):
             client.variables,
             [
                 (
-                    "tiagomiele/oficina-backend-fiap-fase3",
+                    "tiagomiele/fiap-tech-challenge-fase3-oficina-backend",
                     "homolog",
                     "API_GATEWAY_BASE_URL",
                     "https://abc.execute-api.us-west-2.amazonaws.com",
                 ),
                 (
-                    "tiagomiele/oficina-backend-fiap-fase3",
+                    "tiagomiele/fiap-tech-challenge-fase3-oficina-backend",
                     "homolog",
                     "AUTH_BASE_URL",
                     "https://abc.execute-api.us-west-2.amazonaws.com",
                 ),
                 (
-                    "tiagomiele/oficina-backend-fiap-fase3",
+                    "tiagomiele/fiap-tech-challenge-fase3-oficina-backend",
                     "homolog",
                     "NOTIFICATION_ENDPOINT",
                     "https://abc.execute-api.us-west-2.amazonaws.com/internal/notifications",
@@ -79,7 +79,7 @@ class SyncOutputsTest(unittest.TestCase):
                         "value": "https://abc.execute-api.us-west-2.amazonaws.com/internal/notifications"
                     }
                 },
-                "tiagomiele/oficina-backend-fiap-fase3",
+                "tiagomiele/fiap-tech-challenge-fase3-oficina-backend",
                 "homolog",
             )
 
@@ -108,7 +108,7 @@ class SyncOutputsTest(unittest.TestCase):
                         "value": "https://other.example.com/internal/notifications"
                     },
                 },
-                "tiagomiele/oficina-backend-fiap-fase3",
+                "tiagomiele/fiap-tech-challenge-fase3-oficina-backend",
                 "homolog",
             )
 

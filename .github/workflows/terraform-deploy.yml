@@ -137,7 +137,7 @@ jobs:
           client-id: ${{ vars.SYNC_APP_CLIENT_ID }}
           private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: oficina-backend-fiap-fase3
+          repositories: fiap-tech-challenge-fase3-oficina-backend
 
       - name: Sincronizar API Gateway com o Backend
         env:
@@ -253,7 +253,7 @@ jobs:
           client-id: ${{ vars.SYNC_APP_CLIENT_ID }}
           private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: oficina-backend-fiap-fase3
+          repositories: fiap-tech-challenge-fase3-oficina-backend
 
       - name: Sincronizar API Gateway com o Backend
         env:

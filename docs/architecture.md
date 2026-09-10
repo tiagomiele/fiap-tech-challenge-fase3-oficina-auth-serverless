@@ -32,9 +32,9 @@ O remetente precisa estar verificado no SES. Contas em sandbox também exigem de
 
 ## Dependências
 
-- rede e EKS: `oficina-kubernetes-infra-fiap-fase3`;
-- RDS: `oficina-database-infra-fiap-fase3`;
-- APIs de negócio: `oficina-backend-fiap-fase3`.
+- rede e EKS: `fiap-tech-challenge-fase3-oficina-kubernetes-infra`;
+- RDS: `fiap-tech-challenge-fase3-oficina-database-infra`;
+- APIs de negócio: `fiap-tech-challenge-fase3-oficina-backend`.
 
 ## Rotas protegidas
 
