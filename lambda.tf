@@ -76,7 +76,7 @@ resource "aws_lambda_function" "authorizer" {
 
   filename         = var.lambda_package_path
   source_code_hash = filebase64sha256(var.lambda_package_path)
-  memory_size      = 384
+  memory_size      = 1024
   timeout          = 10
 
   environment {
