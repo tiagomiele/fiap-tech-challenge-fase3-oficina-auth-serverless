@@ -1,111 +1,84 @@
-# Oficina Auth Serverless — Fase 3
+# Oficina Fase 3 — Auth Serverless
 
-Serviço serverless de autenticação por CPF e entrega assíncrona de notificações da oficina mecânica. Implementa AWS Lambda Java 21, JWT RSA, Lambda Authorizer, API Gateway HTTP API, SNS, entrega configurável por log ou SES e infraestrutura Terraform compatível com AWS Academy.
+Documentação da autenticação por CPF, do API Gateway e das notificações serverless. A visão completa da Oficina está no [repositório central](https://github.com/tiagomiele/backend).
+
+Projeto de implementação: [fiap-tech-challenge-fase3-oficina-auth-serverless](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-auth-serverless)
+
+## Visão de negócio
+
+O Auth permite que um cliente ativo acesse com segurança as funcionalidades relacionadas às suas Ordens de Serviço sem utilizar uma senha criada pela oficina. O CPF identifica o cadastro; um JWT de curta duração representa a sessão autorizada e protege consultas e decisões do cliente.
+
+O mesmo projeto desacopla as notificações da execução da OS. Assim, o atendimento principal não depende do tempo de entrega de e-mail e falhas podem ser repetidas ou encaminhadas para uma fila de erro.
 
 ## Responsabilidades
 
-- validar e normalizar CPF;
-- consultar a existência e o status do cliente no RDS;
-- emitir JWT de curta duração;
-- autorizar rotas protegidas no API Gateway;
-- produzir logs estruturados em JSON sem CPF ou token;
-- expor telemetria opcional no New Relic e log de acesso técnico do API Gateway;
-- aceitar notificações técnicas do backend e processá-las de forma assíncrona por SNS, com entrega por log ou SES;
-- redirecionar falhas definitivas de entrega para uma DLQ;
-- provisionar os componentes serverless com a `LabRole` existente.
+- validar e normalizar o CPF;
+- consultar existência e situação ativa do cliente no PostgreSQL;
+- emitir e validar JWT RSA de curta duração;
+- proteger rotas do cliente com Lambda Authorizer;
+- controlar e rotear requisições pelo API Gateway;
+- receber notificações técnicas, publicá-las no SNS e tratar falhas pela DLQ;
+- entregar por log técnico ou SES opcional, sem expor CPF, token ou mensagem nos logs;
+- publicar logs estruturados, correlação e telemetria New Relic;
+- provisionar os componentes serverless com Terraform.
 
-Não contém regras de Ordem de Serviço nem infraestrutura do EKS ou do RDS.
+Regras da Ordem de Serviço permanecem no Backend; EKS e RDS pertencem aos respectivos projetos de infraestrutura.
 
-## Arquitetura
+## Arquitetura do componente
 
-```mermaid
-flowchart LR
-    Client[Cliente] --> Gateway[API Gateway]
-    Gateway --> Login[Lambda Login CPF]
-    Login --> DB[(RDS PostgreSQL)]
-    Login --> NR[New Relic]
-    Gateway --> Authorizer[Lambda Authorizer]
-    Authorizer --> API[Backend no EKS]
-    API --> NotificationApi[Lambda Ingresso]
-    NotificationApi --> SNS[Amazon SNS]
-    SNS --> Delivery[Lambda Entrega]
-    Delivery --> Log[Log técnico sem PII]
-    Delivery -. modo opcional .-> SES[Amazon SES]
-    SNS --> DLQ[SQS DLQ]
-```
+![Arquitetura resumida do Auth Serverless](docs/assets/arquitetura-auth-resumida.png)
 
-### Clean Architecture
+## Modelo arquitetural e práticas
 
-O código Java segue a direção de dependências `adapters/infrastructure → application → domain`:
+O projeto utiliza uma separação leve inspirada em Clean Architecture, adequada a funções serverless:
 
-- `domain`: CPF, cliente autorizado, notificação e erros de validação, sem AWS SDK, JDBC, Jackson, JJWT ou New Relic;
-- `application/port/in`: contratos dos fluxos de autenticação, autorização, publicação, entrega e encaminhamento de logs;
-- `application/usecase`: orquestra as regras sem conhecer Lambda, API Gateway, RDS, SNS, SES ou New Relic;
-- `application/port/out`: abstrações de persistência, JWT, mensageria, entrega e publicação de logs;
-- `adapter/out`: implementações JDBC, JJWT, SNS, SES e New Relic;
-- `handler`: adaptadores de entrada Lambda mantidos no pacote original para preservar os FQCNs configurados no Terraform;
-- `infrastructure/config/AuthComposition`: composition root que lê a configuração externa e monta as dependências.
+- `domain`: CPF e regras independentes da AWS;
+- `application`: contratos exigidos pelo caso de autenticação;
+- `handler`: adaptadores de entrada das Lambdas;
+- `infrastructure`: PostgreSQL e serviço de JWT;
+- `notification` e `observability`: mensageria, entrega, logs e telemetria.
 
-O ArchUnit impede dependências externas em `domain` e `application`. Testes de contrato também garantem que os cinco handlers mantenham construtores públicos sem argumentos e os mesmos entrypoints usados pelo Terraform.
+Ele não replica os quatro anéis do Backend. Cada Lambda possui responsabilidade delimitada, dependências externas ficam atrás de interfaces e os fluxos são cobertos por testes unitários. Spotless, Terraform Validate, TFLint, Trivy, Gitleaks e revisão por Pull Request apoiam Clean Code, segurança e consistência.
 
-## Tecnologias
+## Stack e ferramentas
 
-- AWS Lambda, API Gateway, SNS, SQS e SES opcional;
-- Java 21;
-- JWT com assinatura assimétrica;
-- Terraform;
-- GitHub Actions;
-- New Relic Lambda integration.
+| Área | Tecnologias |
+|---|---|
+| Aplicação | Java 21 e Maven Wrapper |
+| APIs e segurança | API Gateway v2, AWS Lambda, Lambda Authorizer e JWT RSA |
+| Integração | PostgreSQL, Amazon SNS, SQS/DLQ e SES opcional |
+| Infraestrutura | Terraform, HCP Terraform e AWS Academy `LabRole` |
+| Qualidade | JUnit, Spotless, TFLint, Trivy, Gitleaks e actionlint |
+| Entrega | GitHub Actions, GitHub Environments e sincronização de outputs |
+| Observabilidade | Logs JSON, mascaramento de PII, correlação e New Relic serverless |
 
-## Build e testes
+## Execução e deploy
+
+Validação local do projeto original:
 
 ```bash
 ./mvnw -B verify spotless:check
+terraform fmt -check -recursive
+terraform init -backend=false -input=false -lockfile=readonly
+terraform validate
 ```
 
-Os testes cobrem os casos de uso com portas em memória, regras de dependência da Clean Architecture com ArchUnit, compatibilidade dos handlers Terraform, login com sucesso, CPF inválido, ausente, inexistente e inativo, JSON inválido, claims do JWT, token ausente, inválido, expirado, com emissor ou audiência incorretos, allow e deny do Authorizer, logs estruturados, encaminhamento de log de acesso e o fluxo assíncrono de notificações sem PII nos logs.
+Pull Requests executam CI e Terraform Plan sem criar recursos. O merge em `homolog` implanta homologação; a promoção para `main` executa produção com proteção do GitHub Environment. O deploy empacota as Lambdas, aplica o Terraform e sincroniza as URLs resultantes com o Backend.
 
-O artefato compartilhado pelas Lambdas é gerado em:
+- [Implantação e operação](docs/implantacao-operacao.md)
+- [CI/CD integrado da solução](https://github.com/tiagomiele/backend/blob/documentation/docs/cicd-promocao.md)
+- [Bootstrap AWS](https://github.com/tiagomiele/backend/blob/documentation/docs/bootstrap-aws-do-zero.md)
 
-```text
-target/oficina-auth.jar
-```
+## Documentação técnica
 
-## Terraform
+- [Arquitetura serverless](docs/arquitetura.md)
+- [Fluxo central de autenticação](https://github.com/tiagomiele/backend/blob/documentation/docs/architecture/autenticacao.md)
+- [RFC de autenticação](https://github.com/tiagomiele/backend/blob/documentation/docs/decisions/rfc/0003-autenticacao-cpf-jwt.md)
+- [ADR de comunicação assíncrona](https://github.com/tiagomiele/backend/blob/documentation/docs/decisions/adr/0002-comunicacao-assincrona.md)
 
-O repositório cria a rota pública `POST /auth/cpf`, a rota técnica protegida `POST /internal/notifications` e seis rotas do cliente protegidas pelo Lambda Authorizer. Também cria o tópico SNS, a Lambda de entrega configurável e a DLQ. O modo `log` é o padrão compatível com AWS Academy; o modo `ses` exige uma identidade previamente verificada e permissões que a `LabRole` pode bloquear. Configure um workspace HCP por ambiente, execute o build antes do plan e nunca versione chaves ou credenciais.
+## OpenAPI e Postman
 
-```bash
-./mvnw -B -DskipTests package
-terraform init -input=false -lockfile=readonly
-terraform plan -input=false -no-color
-```
+- [Contrato OpenAPI de autenticação e rotas protegidas](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-auth-serverless/blob/main/docs/openapi/oficina-auth.yaml)
+- [Collection Postman integrada](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-backend/blob/main/tests/postman/oficina-weeks4-5.postman_collection.json)
 
-O CI apresenta quatro jobs sequenciais: `Repository validation → Java build and tests → Terraform validation → Security validation`. Pull Requests para `homolog` ou `main` executam plan sem apply. Após o merge, o próprio deploy executa `plan → apply → sincronização das URLs do API Gateway com o Backend`. Em `homolog`, o fluxo aparece como `Validate configuration and AWS → Package Lambda artifact → Terraform Auth → Deployment summary`; em `main`, toda a execução permanece em um único job protegido para exigir somente uma aprovação do GitHub Environment `production`. O `workflow_dispatch` permite repetir o deploy a partir da branch correspondente para bootstrap ou recuperação. Destroy permanece manual via Terraform CLI e não faz parte da esteira. Configuração ausente ou sessão AWS inválida falha explicitamente. Consulte [AWS Academy e deploy](docs/deployment.md).
-
-Após o apply, `scripts/sync-auth-outputs.py` atualiza `API_GATEWAY_BASE_URL`, `AUTH_BASE_URL` e `NOTIFICATION_ENDPOINT` no Backend. A escrita usa preferencialmente uma GitHub App instalada somente em `oficina-backend-fiap-fase3`, com permissão **Environments: read and write**; configure `SYNC_APP_CLIENT_ID` com o Client ID da GitHub App e `SYNC_APP_PRIVATE_KEY` com a chave privada, uma única vez no repositório Auth. `GITHUB_SYNC_TOKEN` permanece somente como alternativa temporária de recuperação.
-
-## Observabilidade
-
-A instrumentação New Relic e o encaminhamento do log de acesso são opcionais e desligados por padrão. Variáveis, ARNs de camada e consultas estão em [Observabilidade](docs/observability.md).
-
-## Contrato
-
-O contrato de autenticação, rotas protegidas e ingresso técnico de notificações está em [`docs/openapi/oficina-auth.yaml`](docs/openapi/oficina-auth.yaml) e pode ser importado diretamente na collection central do Postman.
-
-## Documentação
-
-- [Arquitetura e contratos](docs/architecture.md)
-- [Observabilidade](docs/observability.md)
-- [Contrato OpenAPI](docs/openapi/oficina-auth.yaml)
-- [Segurança](docs/security.md)
-- [AWS Academy e deploy](docs/deployment.md)
-- [Repositórios da solução](docs/repositories.md)
-
-## Contribuição
-
-- mudanças somente por Pull Request;
-- `main` representa produção;
-- `homolog` representa homologação;
-- CI aprovado antes do merge;
-- nenhum CPF, token ou segredo em logs e arquivos versionados.
+A URL efetiva do API Gateway é gerada pelo Terraform e deve ser atualizada após cada reconstrução do AWS Academy.
