@@ -1,4 +1,5 @@
 # validação deploy da aplicação homolog, infraestrutura, add-ons e observabilidade
+# validação proteção da branhe main
 name: Terraform deploy
 
 on:
