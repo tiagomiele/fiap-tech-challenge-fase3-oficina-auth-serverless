@@ -1,8 +1,6 @@
 # Oficina Fase 3 — Auth Serverless
 
-Documentação da autenticação por CPF, do API Gateway e das notificações serverless. A visão completa da Oficina está no [repositório central](https://github.com/tiagomiele/backend).
-
-Projeto de implementação: [fiap-tech-challenge-fase3-oficina-auth-serverless](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-auth-serverless)
+Serviço serverless responsável pela autenticação de clientes por CPF, emissão e validação de JWT e entrega assíncrona de notificações da Oficina.
 
 ## Visão de negócio
 
@@ -28,17 +26,44 @@ Regras da Ordem de Serviço permanecem no Backend; EKS e RDS pertencem aos respe
 
 ![Arquitetura resumida do Auth Serverless](docs/assets/arquitetura-auth-resumida.png)
 
-## Modelo arquitetural e práticas
+### Fluxo de autenticação
 
-O projeto utiliza uma separação leve inspirada em Clean Architecture, adequada a funções serverless:
+```text
+Cliente
+  → POST /auth/cpf
+  → API Gateway
+  → Lambda de autenticação
+  → consulta ao PostgreSQL
+  → emissão do JWT RSA
+  → cliente utiliza Bearer Token
+  → Lambda Authorizer valida o token
+  → API protegida do Backend
+```
 
-- `domain`: CPF e regras independentes da AWS;
-- `application`: contratos exigidos pelo caso de autenticação;
-- `handler`: adaptadores de entrada das Lambdas;
-- `infrastructure`: PostgreSQL e serviço de JWT;
-- `notification` e `observability`: mensageria, entrega, logs e telemetria.
+### Fluxo de notificação
 
-Ele não replica os quatro anéis do Backend. Cada Lambda possui responsabilidade delimitada, dependências externas ficam atrás de interfaces e os fluxos são cobertos por testes unitários. Spotless, Terraform Validate, TFLint, Trivy, Gitleaks e revisão por Pull Request apoiam Clean Code, segurança e consistência.
+```text
+Backend
+  → endpoint interno do API Gateway
+  → Lambda publicadora
+  → SNS
+  → Lambda de entrega
+  → SES ou log técnico
+  → SQS/DLQ em caso de falha definitiva
+```
+
+## Modelo arquitetural
+
+O código utiliza uma Clean Architecture adaptada ao contexto serverless:
+
+- `domain`: regras independentes da AWS, como CPF;
+- `application`: casos de uso e portas de entrada e saída;
+- `adapter/out`: integrações JDBC, JWT, SNS, SES e New Relic;
+- `handler`: adaptadores de entrada das funções Lambda;
+- `config`: composição das dependências;
+- `notification`, `forwarder` e `observability`: processamento assíncrono e telemetria.
+
+Cada função possui responsabilidade delimitada, e serviços externos ficam atrás de interfaces da aplicação.
 
 ## Stack e ferramentas
 
@@ -52,33 +77,136 @@ Ele não replica os quatro anéis do Backend. Cada Lambda possui responsabilidad
 | Entrega | GitHub Actions, GitHub Environments e sincronização de outputs |
 | Observabilidade | Logs JSON, mascaramento de PII, correlação e New Relic serverless |
 
-## Execução e deploy
+## Estrutura de pastas
 
-Validação local do projeto original:
+```text
+.
+├── .github/workflows/
+│   ├── ci.yml                     # build, testes e segurança
+│   ├── terraform-plan.yml         # plan de homologação e produção
+│   └── terraform-deploy.yml       # apply por ambiente
+├── docs/
+│   ├── arquitetura.md
+│   ├── implantacao-operacao.md
+│   ├── openapi/oficina-auth.yaml
+│   └── assets/                    # diagramas do componente
+├── environments/                  # exemplos de variáveis por ambiente
+├── scripts/                       # validação AWS e sincronização de outputs
+├── src/main/java/br/com/oficina/auth/
+│   ├── domain/                    # regras independentes da infraestrutura
+│   ├── application/               # casos de uso e portas
+│   ├── adapter/out/               # JDBC, JWT, SNS, SES e New Relic
+│   ├── handler/                   # entradas das Lambdas
+│   ├── config/                    # composição das dependências
+│   ├── notification/              # processamento de notificações
+│   ├── forwarder/                 # encaminhamento de logs
+│   └── observability/             # telemetria
+├── src/test/                       # testes Java
+├── tests/                          # testes dos scripts de integração
+├── apigateway.tf                   # HTTP API, rotas e Authorizer
+├── lambda.tf                       # funções de autenticação
+├── notification.tf                # SNS, SQS/DLQ e entrega
+├── newrelic.tf                     # instrumentação serverless
+├── providers.tf
+├── variables.tf
+├── outputs.tf
+└── pom.xml
+```
+
+## Pré-requisitos
+
+- Java 21;
+- Git;
+- Terraform compatível com `versions.tf`;
+- credenciais AWS válidas somente para plans e deploys remotos;
+- organização e workspaces HCP Terraform configurados para homologação e produção.
+
+O Maven Wrapper está incluído; não é necessário instalar Maven globalmente.
+
+## Validar localmente
+
+Linux/macOS:
 
 ```bash
-./mvnw -B verify spotless:check
+./mvnw -B clean verify spotless:check
 terraform fmt -check -recursive
 terraform init -backend=false -input=false -lockfile=readonly
 terraform validate
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-Pull Requests executam CI e Terraform Plan sem criar recursos. O merge em `homolog` implanta homologação; a promoção para `main` executa produção com proteção do GitHub Environment. O deploy empacota as Lambdas, aplica o Terraform e sincroniza as URLs resultantes com o Backend.
+Windows PowerShell:
 
-- [Implantação e operação](docs/implantacao-operacao.md)
-- [CI/CD integrado da solução](https://github.com/tiagomiele/backend/blob/documentation/docs/cicd-promocao.md)
-- [Bootstrap AWS](https://github.com/tiagomiele/backend/blob/documentation/docs/bootstrap-aws-do-zero.md)
+```powershell
+.\mvnw.cmd -B clean verify spotless:check
+terraform fmt -check -recursive
+terraform init -backend=false -input=false -lockfile=readonly
+terraform validate
+python -m unittest discover -s tests -p "test_*.py"
+```
 
-## Documentação técnica
+A validação local não cria recursos na AWS.
 
-- [Arquitetura serverless](docs/arquitetura.md)
-- [Fluxo central de autenticação](https://github.com/tiagomiele/backend/blob/documentation/docs/architecture/autenticacao.md)
-- [RFC de autenticação](https://github.com/tiagomiele/backend/blob/documentation/docs/decisions/rfc/0003-autenticacao-cpf-jwt.md)
-- [ADR de comunicação assíncrona](https://github.com/tiagomiele/backend/blob/documentation/docs/decisions/adr/0002-comunicacao-assincrona.md)
+## Contrato da API
 
-## OpenAPI e Postman
+- autenticação: `POST /auth/cpf`;
+- notificação técnica: `POST /internal/notifications`;
+- a URL base é gerada pelo Terraform no output `api_base_url`.
 
-- [Contrato OpenAPI de autenticação e rotas protegidas](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-auth-serverless/blob/main/docs/openapi/oficina-auth.yaml)
-- [Collection Postman integrada](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-backend/blob/main/tests/postman/oficina-weeks4-5.postman_collection.json)
+A URL do API Gateway muda quando o ambiente AWS Academy é reconstruído. Não grave URLs temporárias como configuração permanente.
 
-A URL efetiva do API Gateway é gerada pelo Terraform e deve ser atualizada após cada reconstrução do AWS Academy.
+## Configuração e segurança
+
+Os arquivos de exemplo estão em:
+
+- [Homologação](environments/homolog.tfvars.example)
+- [Produção](environments/production.tfvars.example)
+
+Chaves RSA, credenciais do banco, API keys e chaves New Relic devem ser armazenadas como variáveis sensíveis no HCP Terraform ou como Secrets dos GitHub Environments. Nenhum segredo real deve ser versionado.
+
+Os logs não devem registrar CPF completo, JWT, corpo de notificação ou credenciais.
+
+## CI/CD e implantação
+
+| Etapa | Comportamento |
+|---|---|
+| Pull Request | executa CI e Terraform Plan, sem criar recursos |
+| Merge em `homolog` | empacota as Lambdas e implanta homologação |
+| Promoção para `main` | implanta produção pelo ambiente protegido |
+| Pós-deploy | sincroniza URLs e configurações necessárias com o Backend |
+
+Fluxo de promoção:
+
+```text
+feature → Pull Request → homolog → Pull Request → main
+```
+
+A implantação cria API Gateway, Lambdas, Authorizer, logs, SNS, SQS/DLQ, integração SES opcional e instrumentação New Relic.
+
+## Outputs principais
+
+| Output | Finalidade |
+|---|---|
+| `api_base_url` | URL base do API Gateway |
+| `cpf_authentication_url` | endpoint de autenticação por CPF |
+| `notification_endpoint` | endpoint interno consumido pelo Backend |
+| `login_lambda_name` | nome da Lambda de autenticação |
+| `authorizer_lambda_name` | nome da Lambda Authorizer |
+| `notification_topic_arn` | ARN do tópico SNS |
+| `notification_dlq_url` | URL da fila de falhas |
+
+## Documentação e evidências
+
+- [Documentação central da Fase 3](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-backend/tree/feature/validacao-deploy-aplicacao)
+- [Requisitos obrigatórios e evidências](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-backend/blob/feature/validacao-deploy-aplicacao/README-requisitos-obrigatorios-fase-3.md)
+- [Collection Postman integrada](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-backend/blob/feature/validacao-deploy-aplicacao/tests/postman/oficina-weeks4-5.postman_collection.json)
+
+## Projetos relacionados
+
+- [Backend](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-backend)
+- [Database Infra](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-database-infra)
+- [Kubernetes Infra](https://github.com/tiagomiele/fiap-tech-challenge-fase3-oficina-kubernetes-infra)
+
+## Licença
+
+Consulte o arquivo [LICENSE](LICENSE).
